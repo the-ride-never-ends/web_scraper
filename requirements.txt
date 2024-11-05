@@ -1,0 +1,7 @@
+aiohttp
+beautifulsoup4
+multipledispatch
+pytest-playwright
+pyyaml
+requests
+selenium
