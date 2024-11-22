@@ -279,7 +279,7 @@ class AsyncPlaywrightScrapper:
     # These function's put all the small bits together.
 
     @try_except(exception=[AsyncPlaywrightTimeoutError, AsyncPlaywrightError])
-    async def navigate_to(self, url: str, idx: int=None, **kwargs) -> Coroutine:
+    async def navigate_to(self, url: str, idx: int = None, crawl_override: int|float = None, **kwargs) -> Coroutine:
         """
         Open a specified webpage and wait for any dynamic elements to load.
         This method respects robots.txt rules (e.g. not scrape disallowed URLs, respects crawl delays).
@@ -287,6 +287,8 @@ class AsyncPlaywrightScrapper:
 
         Args:
             url (str): The URL of the webpage to navigate to.
+            idx (int, optional): Index of the current request, used for applying delays. Defaults to None.
+            crawl_override (int|float, optional): Override the crawl delay specified in robots.txt. Defaults to None.
             **kwargs: Additional keyword arguments to pass to the page.goto() method.
 
         Returns:
@@ -295,17 +297,29 @@ class AsyncPlaywrightScrapper:
         Raises:
             AsyncPlaywrightTimeoutError: If the page fails to load within the specified timeout.
             AsyncPlaywrightError: If any other Playwright-related error occurs during navigation.
+
+        Note:
+            - The method cleans up URLs by replacing '%2C' with ','.
+            - It checks if scraping is allowed for the URL according to robots.txt.
+            - Applies a delay between requests based on robots.txt or the crawl_override parameter.
+            - Opens a new context and page for each navigation.
+            - Waits for the page to fully load before returning.
         """
+        # Clean up the URL.
+        if "%2C" in url:
+            url = re.sub("%2C", ",", url)
+
         # See if we're allowed to get the URL, as well as get the specified delay from robots.txt
         if not self.rp.can_fetch(self.user_agent, url):
             logger.warning(f"Cannot scrape URL '{url}' as it's disallowed in robots.txt")
             return
 
-        # Wait per the robots.txt crawl delay.
-        if self.crawl_delay > 0:
-            if idx > 1:
-                logger.info(f"Sleeping for {self.crawl_delay} seconds to respect robots.txt crawl delay")
-                await asyncio.sleep(self.crawl_delay)
+        # Wait per the robots.txt crawl delay or override delay.
+        if idx is not None and idx > 1: # Round up since crawl_override can be either a float or int.
+            delay = crawl_override if crawl_override and int(math.ceil(crawl_override)) > 0 else self.crawl_delay
+            if delay > 0:
+                logger.info(f"Sleeping for {delay} seconds per {'crawl override' if crawl_override else 'robots.txt crawl delay'}")
+                await asyncio.sleep(delay)
 
         # Open a new context and page.
         await self.open_new_context()
